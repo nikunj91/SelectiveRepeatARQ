@@ -23,7 +23,6 @@ TYPE_ACK  = "0011001100110011"
 TYPE_NACK = "1100110011001100"
 TYPE_EOF  = "1111111111111111"
 DATA_PAD = "0000000000000000"
-
 ACK_PORT = 65000
 server_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 HOST_NAME = '0.0.0.0'
@@ -31,7 +30,9 @@ ACK_HOST_NAME = ''
 server_socket.bind((HOST_NAME, SERVER_PORT))
 last_received_packet=-1
 
+#Server buffer that stores the incoming packets within the window
 server_window_buffer = collections.OrderedDict()
+#Maintains the window boundaries
 window_minimum=0
 window_maximum=N
 
@@ -75,13 +76,14 @@ def is_checksum_proper(chunk,checksum):
 def check_if_packet_drop(PACKET_LOSS_PROB,packet_sequence_number):
 	return random.random()<PACKET_LOSS_PROB
 
-#Send the ack back to the sender
+#Send the ACK back to the sender
 def send_acknowledgement(ack_number):
 	ack_packet = pickle.dumps([ack_number, DATA_PAD, TYPE_ACK])
 	ack_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 	ack_socket.sendto(ack_packet,(ACK_HOST_NAME, ACK_PORT))
 	ack_socket.close()
 
+#Send the NACK back to the sender
 def send_negative_acknowledgement(packet_sequence_number):
 	nack_packet = pickle.dumps([packet_sequence_number, DATA_PAD, TYPE_NACK])
 	nack_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -115,8 +117,14 @@ def main():
 			else:
 				#Check if the checksum is proper
 				if is_checksum_proper(packet_data,packet_checksum):
+					#Check if the packet is within the sliding window range
 					if packet_sequence_number>=window_minimum and packet_sequence_number<=window_maximum:
+						#If yes then buffer the packet data
 						server_window_buffer[packet_sequence_number]=packet_data
+						#If the packet causes a new continuous sequence to be formed at the start, then
+						#write the data from those packets
+						#shift the window
+						#Send common ack for highest packet+1
 						if packet_sequence_number==window_minimum:
 							temp=packet_sequence_number
 							while 1:
@@ -129,6 +137,7 @@ def main():
 								else:
 									break
 							send_acknowledgement(temp)
+						#Send the NACK's for the for all the not arrived packets before it
 						else:
 							temp=window_minimum
 							while temp<=window_maximum:
@@ -137,6 +146,7 @@ def main():
 								else:
 									send_negative_acknowledgement(temp)
 									temp=temp+1
+					#If the arrived packet is of sequence number greater than the window then send NACK's for the entire window
 					elif packet_sequence_number>window_maximum:
 						temp=window_minimum
 						while temp<=window_maximum:

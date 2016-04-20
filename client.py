@@ -65,7 +65,7 @@ MSS = int(sys.argv[5])
 #Send the packet to the host details in the parameters
 def send_packet(packet, host, port, socket, sequence_no):
 	client_socket.sendto(packet,(SEND_HOST,SEND_PORT)) #(SEND_HOST, SEND_PORT))
-	print "Sent "+str(sequence_no)
+	#print "Received ACK, sequence number = "+str(sequence_no)
 
 #Will handle the initial packet sending till the receipt of the acknowledgement from the receiver or sliding window is full
 def rdt_send(file_content, client_socket, host, port):
@@ -133,6 +133,7 @@ def ack_process():
 		if reply[2] == TYPE_ACK:
 			#Retrieve the sequence number in the ACK to get the last ACK'ed packet
 			current_ack_seq_number=reply[0]-1
+			print "Received ACK, sequence number = "+str(current_ack_seq_number)
 			if last_ack_packet >= -1:
 				#Acquire the thread control
 				thread_lock.acquire()
@@ -150,6 +151,9 @@ def ack_process():
 					#Record the end time of the transfer
 					t_end=time.time()
 					t_total=t_end-t_start
+					print t_total
+					with open('time_new.txt', 'ab') as file:
+						file.write(str(t_total)+"\n")
 					break
 				#Else if not the last ACK and also not ACK of a packet already ACK'ed by a higher sequence number ACK
 				elif current_ack_seq_number>last_ack_packet:
@@ -177,13 +181,15 @@ def ack_process():
 			#Acquire the thread control
 			thread_lock.acquire()
 			current_nack_seq_number=reply[0]
-			print "NAK: "+str(current_nack_seq_number)
+			print "Received NACK, sequence number = "+str(current_nack_seq_number)
+			#Reset the timer before resending the packet
 			if current_nack_seq_number==last_ack_packet+1:
 				signal.alarm(0)
 				signal.setitimer(signal.ITIMER_REAL, RTT)
+			#Send the requested NACK packet again
 			send_packet(client_buffer[current_nack_seq_number], SEND_HOST, SEND_PORT, client_socket, current_nack_seq_number)
+			#Release the thread
 			thread_lock.release()
-
 
 
 #Handle the timeouts
